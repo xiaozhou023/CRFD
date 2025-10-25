@@ -1,0 +1,56 @@
+data:
+    dataset: "CUSTOM_CELEBA"
+    image_size: 128
+    channels: 3
+    logit_transform: false
+    uniform_dequantization: false
+    gaussian_dequantization: true
+    random_flip: true
+    rescaled: true
+    num_workers: 8
+    apply_gaussian_blur: False
+    apply_pixelation: False
+
+model:
+    type: "simple"
+    in_channels: 3
+    out_ch: 3
+    ch: 128
+    # 减少通道倍数，降低网络复杂度，可能有助于稳定训练
+    ch_mult: [1, 1, 2, 2, 4]
+    num_res_blocks: 2
+    # 增加注意力机制层的分辨率
+    attn_resolutions: [16,]
+    dropout: 0.1  # 增加 dropout 比例，提高泛化能力
+    var_type: fixedlarge
+    ema_rate: 0.9999
+    ema: True
+    resamp_with_conv: True
+    face_feature_dim: 512
+
+diffusion:
+    beta_schedule: linear  # 使用 cosine 调度，噪声控制更平滑
+    beta_start: 0.0001
+    beta_end: 0.02
+    num_diffusion_timesteps: 1000  # 减少扩散步数，加快训练
+
+training:
+    batch_size: 19
+    n_epochs: 10000
+    n_iters: 5000000
+    snapshot_freq: 5000
+    validation_freq: 5000
+    condition_training: True  # 保留条件训练，视实际情况检查条件的质量
+
+sampling:
+    batch_size: 1
+    last_only: True
+
+optim:
+    weight_decay: 0.000
+    optimizer: "Adam"
+    lr: 0.0001
+    beta1: 0.9
+    amsgrad: false
+    eps: 0.00000001
+    grad_clip: 1.0
