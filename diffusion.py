@@ -134,46 +134,46 @@ class AttnBlock(nn.Module):
 class CrossAttention(nn.Module):
     def __init__(self, feature_dim, condition_dim):
         super(CrossAttention, self).__init__()
-        # 将图像特征投影为 Query
+        # Project image features to Query
         self.query_proj = nn.Conv2d(feature_dim, feature_dim, kernel_size=1)
-        # 将条件特征投影为 Key 和 Value
+        # Project condition features to Key and Value
         self.key_proj = nn.Linear(condition_dim, feature_dim)
         self.value_proj = nn.Linear(condition_dim, feature_dim)
-        # 用于最后的输出变换
+        # For final output transformation
         self.output_proj = nn.Conv2d(feature_dim, feature_dim, kernel_size=1)
 
 
     def forward(self, x, condition,scale=1.0):
-        # 对图像特征进行卷积投影，生成 Query
+        # Convolutional projection of image features to generate Query
         query = self.query_proj(x)  # (B, C_feat, H, W)
 
-        # 对条件特征进行线性投影，生成 Key 和 Value
+        # Linear projection of condition features to generate Key and Value
         key = self.key_proj(condition)  # (B, C_feat)
         value = self.value_proj(condition)  # (B, C_feat)
 
-        # 调整形状以便进行矩阵乘法
+        # Reshape for matrix multiplication
         b, c, h, w = query.shape
         query = query.view(b, c, h * w).permute(0, 2, 1)  # (B, H*W, C_feat)
         key = key.unsqueeze(1)  # (B, 1, C_feat)
         value = value.unsqueeze(1)  # (B, 1, C_feat)
 
-        # 计算注意力得分，取 query 和 key 的点积
+        # Calculate attention scores, dot product of query and key
         attention_scores = torch.bmm(query, key.permute(0, 2, 1)) * (c ** -0.5)  # (B, H*W, 1)
 
-        # 引入可学习的scale参数，调节注意力得分的大小
+        # Introduce learnable scale parameter to adjust the magnitude of attention scores
         attention_scores = attention_scores * scale
 
-        # 计算注意力权重
+        # Calculate attention weights
         attention_weights = torch.softmax(attention_scores, dim=1)  # (B, H*W, 1)
 
-        # 使用注意力权重对 value 进行加权
+        # Weight the value using attention weights
         attended_features = torch.bmm(attention_weights, value)  # (B, H*W, C_feat)
         attended_features = attended_features.permute(0, 2, 1).view(b, c, h, w)  # (B, C_feat, H, W)
 
-        # 通过 output_proj 输出最终结果
+        # Final output through output_proj
         output = self.output_proj(attended_features) + x  # (B, C_feat, H, W)
 
-        # 将注意力权重 reshape 成与原始输入相同的形状
+        # Reshape attention weights to the same shape as the original input
         attention_map = attention_weights.view(b, h, w)
 
         return output, attention_map
@@ -224,7 +224,7 @@ class ConditionalUNet(nn.Module):
             down = nn.Module()
             down.block = block
             down.attn = attn
-            down.cross_attention = CrossAttention(block_out, feature_dim)  # 添加交叉注意力模块
+            down.cross_attention = CrossAttention(block_out, feature_dim)  # Add cross-attention module
             if i_level != self.num_resolutions - 1:
                 down.downsample = Downsample(block_in, resamp_with_conv)
                 curr_res = curr_res // 2
@@ -234,7 +234,7 @@ class ConditionalUNet(nn.Module):
         self.mid = nn.Module()
         self.mid.block_1 = ResnetBlock(in_channels=block_in, out_channels=block_in, temb_channels=self.temb_ch, dropout=dropout)
         self.mid.attn_1 = AttnBlock(block_in)
-        self.mid.cross_attention_mid = CrossAttention(block_in, feature_dim)  # 添加中间层的交叉注意力
+        self.mid.cross_attention_mid = CrossAttention(block_in, feature_dim)  # Add cross-attention in the middle layer
         self.mid.block_2 = ResnetBlock(in_channels=block_in, out_channels=block_in, temb_channels=self.temb_ch, dropout=dropout)
 
         # Initialize upsampling layers
@@ -254,7 +254,7 @@ class ConditionalUNet(nn.Module):
             up = nn.Module()
             up.block = block
             up.attn = attn
-            up.cross_attention = CrossAttention(block_out, feature_dim)  # 添加上采样的交叉注意力模块
+            up.cross_attention = CrossAttention(block_out, feature_dim)  # Add cross-attention module for upsampling
             if i_level != 0:
                 up.upsample = Upsample(block_in, resamp_with_conv)
                 curr_res = curr_res * 2
@@ -284,7 +284,7 @@ class ConditionalUNet(nn.Module):
                     h = self.down[i_level].attn[i_block](h)
                 
                 # Add cross attention
-                h, _ = self.down[i_level].cross_attention(h, face_features,scale)  # 使用交叉注意力
+                h, _ = self.down[i_level].cross_attention(h, face_features,scale)  # Use cross-attention
                 hs.append(h)
             if i_level != self.num_resolutions - 1:
                 hs.append(self.down[i_level].downsample(h))
@@ -293,7 +293,7 @@ class ConditionalUNet(nn.Module):
         h = hs[-1]
         h = self.mid.block_1(h, temb)
         h = self.mid.attn_1(h)
-        h, _ = self.mid.cross_attention_mid(h, face_features,scale)  # 中间层的交叉注意力
+        h, _ = self.mid.cross_attention_mid(h, face_features,scale)  # Cross-attention in the middle layer
         h = self.mid.block_2(h, temb)
 
         # Upsampling
@@ -304,7 +304,7 @@ class ConditionalUNet(nn.Module):
                     h = self.up[i_level].attn[i_block](h)
                 
                 # Add cross attention
-                h, _ = self.up[i_level].cross_attention(h, face_features,scale)  # 使用交叉注意力
+                h, _ = self.up[i_level].cross_attention(h, face_features,scale)  # Use cross-attention
             if i_level != 0:
                 h = self.up[i_level].upsample(h)
 
@@ -329,21 +329,21 @@ class ConditionalUNet(nn.Module):
     #             h = self.down[i_level].block[i_block](hs[-1], temb)
     #             if len(self.down[i_level].attn) > 0:
     #                 h = self.down[i_level].attn[i_block](h)
-    #             hs.append(h)  # 不使用 cross-attention
+    #             hs.append(h)  # Do not use cross-attention
     #         if i_level != self.num_resolutions - 1:
     #             hs.append(self.down[i_level].downsample(h))
 
     #     h = hs[-1]
     #     h = self.mid.block_1(h, temb)
     #     h = self.mid.attn_1(h)
-    #     h = self.mid.block_2(h, temb)  # 不使用中间 cross-attention
+    #     h = self.mid.block_2(h, temb)  # Do not use middle cross-attention
 
     #     for i_level in reversed(range(self.num_resolutions)):
     #         for i_block in range(self.num_res_blocks + 1):
     #             h = self.up[i_level].block[i_block](torch.cat([h, hs.pop()], dim=1), temb)
     #             if len(self.up[i_level].attn) > 0:
     #                 h = self.up[i_level].attn[i_block](h)
-    #             # 不使用 cross-attention
+    #             # Do not use cross-attention
     #         if i_level != 0:
     #             h = self.up[i_level].upsample(h)
 
@@ -358,14 +358,14 @@ class ConditionalUNet(nn.Module):
     #     temb = nonlinearity(temb)
     #     temb = self.temb.dense[1](temb)
 
-    #     # 不拼接 mask
+    #     # Do not concatenate mask
     #     hs = [self.conv_in(x)]
     #     for i_level in range(self.num_resolutions):
     #         for i_block in range(self.num_res_blocks):
     #             h = self.down[i_level].block[i_block](hs[-1], temb)
     #             if len(self.down[i_level].attn) > 0:
     #                 h = self.down[i_level].attn[i_block](h)
-    #             h, _ = self.down[i_level].cross_attention(h, face_features, scale)  # 保留 cross-attention
+    #             h, _ = self.down[i_level].cross_attention(h, face_features, scale)  # Retain cross-attention
     #             hs.append(h)
     #         if i_level != self.num_resolutions - 1:
     #             hs.append(self.down[i_level].downsample(h))
@@ -396,14 +396,14 @@ class ConditionalUNet(nn.Module):
     #     temb = nonlinearity(temb)
     #     temb = self.temb.dense[1](temb)
 
-    #     # 不拼接 mask
+    #     # Do not concatenate mask
     #     hs = [self.conv_in(x)]
     #     for i_level in range(self.num_resolutions):
     #         for i_block in range(self.num_res_blocks):
     #             h = self.down[i_level].block[i_block](hs[-1], temb)
     #             if len(self.down[i_level].attn) > 0:
     #                 h = self.down[i_level].attn[i_block](h)
-    #             hs.append(h)  # 不用 cross-attention
+    #             hs.append(h)  # Do not use cross-attention
     #         if i_level != self.num_resolutions - 1:
     #             hs.append(self.down[i_level].downsample(h))
 
@@ -424,4 +424,3 @@ class ConditionalUNet(nn.Module):
     #     h = nonlinearity(h)
     #     h = self.conv_out(h)
     #     return h
-
